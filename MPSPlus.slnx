@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="MPSPlus.Models/MPSPlus.Models.csproj" Id="26a631d1-095e-4f1c-8909-72d1a03bca45" />
+  <Project Path="MPSPlus.Services/MPSPlus.Services.csproj" />
+  <Project Path="MPSPlus/MPSPlus.csproj">
+    <Deploy Solution="Debug|*" />
+  </Project>
+</Solution>

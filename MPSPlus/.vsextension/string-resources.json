@@ -1,0 +1,8 @@
+{
+  "MPSPlus.Commands.DisplayName": "MPS Actions",
+  "MPSPlus.Commands.Translate.DisplayName": "翻译",
+  "MPSPlus.Commands.Translate.OpenSourceFile.DisplayName": "打开翻译源文件",
+  "MPSPlus.Commands.Translate.Options.DisplayName": "Options",
+  "MPSPlus.Commands.Translate.Options.Override.DisplayName": "Override",
+  "MPSPlus.Commands.Translate.Options.ChangesOnly.DisplayName": "Changes only"
+}
