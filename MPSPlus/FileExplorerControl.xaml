@@ -36,6 +36,19 @@
         <TreeView Grid.Row="2"
                   Margin="4"
                   ItemsSource="{Binding Items}">
+            <!-- 选中高亮跟随 VS 主题：WPF TreeViewItem 默认模板选中时取 SystemColors.HighlightBrushKey
+                 （系统浅色，Dark 下刺眼）。在此作用域内用 VS 主题的 Highlight / HighlightText 覆盖，
+                 效果对齐解决方案资源管理器（Dark：主题蓝底 + 亮字） -->
+            <TreeView.Resources>
+                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"
+                                 Color="{DynamicResource {x:Static styles:VsColors.HighlightKey}}" />
+                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}"
+                                 Color="{DynamicResource {x:Static styles:VsColors.HighlightTextKey}}" />
+                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}"
+                                 Color="{DynamicResource {x:Static styles:VsColors.HighlightKey}}" />
+                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}"
+                                 Color="{DynamicResource {x:Static styles:VsColors.HighlightTextKey}}" />
+            </TreeView.Resources>
             <TreeView.ItemTemplate>
                 <HierarchicalDataTemplate ItemsSource="{Binding Children}">
                     <!-- 前景色直接设在元素上（本地值优先级最高）：RemoteUI 的 TreeViewItem 容器不传递隐式 TextBlock 样式。
