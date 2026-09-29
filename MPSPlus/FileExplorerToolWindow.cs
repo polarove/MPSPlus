@@ -78,6 +78,38 @@ namespace MPSPlus
             this.RelativePath = relativePath;
             this.IsFolder = isFolder;
             this.Name = Path.GetFileName(fullPath);
+            this.IconSource = GetIconSource(fullPath, isFolder);
+        }
+
+        /// <summary>
+        /// 节点图标（vs:Image 字符串源："KnownMonikers.XXX" 由 VS 侧解析完整图像目录，
+        /// 与解决方案资源管理器同一套图标）。
+        /// </summary>
+        [DataMember]
+        public string IconSource { get; }
+
+        /// <summary>常见扩展名 → 目录图标名；未知类型回退通用文件图标。</summary>
+        private static string GetIconSource(string fullPath, bool isFolder)
+        {
+            if (isFolder)
+            {
+                return "KnownMonikers.FolderClosed";
+            }
+
+            return Path.GetExtension(fullPath).ToLowerInvariant() switch
+            {
+                ".cs" => "KnownMonikers.CSFileNode",
+                ".csproj" => "KnownMonikers.CSProjectNode",
+                ".sln" => "KnownMonikers.Solution",
+                ".json" => "KnownMonikers.JSONScript",
+                ".xaml" => "KnownMonikers.WPFFile",
+                ".xml" => "KnownMonikers.WPFFile",
+                ".md" => "KnownMonikers.MarkdownFile",
+                ".config" => "KnownMonikers.ConfigurationFile",
+                ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".ico" => "KnownMonikers.Image",
+                ".dll" or ".exe" => "KnownMonikers.BinaryFile",
+                _ => "KnownMonikers.TextFile",
+            };
         }
 
         [DataMember]
@@ -109,10 +141,19 @@ namespace MPSPlus
         /// <summary>搜索结果条数上限，防止超大的 bin/.git 目录拖垮 UI。</summary>
         private const int MaxSearchResults = 500;
 
+        /// <summary>
+        /// 指定目录（绝对路径）—— 置空待填。
+        /// 勾选"仅指定目录"后只展示该目录下的文件夹/文件；留空或目录不存在时开关不生效。
+        /// 示例：@"C:\Users\14414\source\repos\MPSPlus\MPSPlus"
+        /// </summary>
+        private const string DesignatedDirectory = "";
+
         private readonly List<FileTreeItem> rootItems = [];
+        private readonly List<FileTreeItem> scopedRootItems = [];
         private string solutionDirectory = string.Empty;
         private string searchText = string.Empty;
         private string statusText = string.Empty;
+        private bool scopeToDesignatedDirectory = true;
         private AsyncCommand? openItemCommand;
         private CancellationTokenSource? searchCts;
 
@@ -152,6 +193,38 @@ namespace MPSPlus
             private set => this.SetProperty(ref this.openItemCommand, value);
         }
 
+        /// <summary>
+        /// 过滤开关（默认选中）：选中 = 只展示 DesignatedDirectory 的内容；
+        /// 未填写指定目录或目录不存在时开关不生效（仍展示全解决方案）。
+        /// </summary>
+        [DataMember]
+        public bool ScopeToDesignatedDirectory
+        {
+            get => this.scopeToDesignatedDirectory;
+            set
+            {
+                if (this.SetProperty(ref this.scopeToDesignatedDirectory, value)
+                    && this.searchText.Trim().Length == 0)
+                {
+                    // 非搜索态直接切换顶层列表；搜索态由下一次过滤自然生效
+                    this.Items.Clear();
+                    this.Items.AddRange(this.CurrentTopItems);
+                }
+            }
+        }
+
+        /// <summary>指定目录是否可用（勾选且目录存在）。</summary>
+        private bool HasScope =>
+            this.scopeToDesignatedDirectory
+            && DesignatedDirectory.Length > 0
+            && Directory.Exists(DesignatedDirectory);
+
+        /// <summary>当前顶层列表：有过滤用指定目录顶层，否则全解决方案顶层。</summary>
+        private List<FileTreeItem> CurrentTopItems => this.HasScope ? this.scopedRootItems : this.rootItems;
+
+        /// <summary>当前搜索起始目录：有过滤从指定目录扫，否则扫全解决方案目录。</summary>
+        private string CurrentScanDirectory => this.HasScope ? DesignatedDirectory : this.solutionDirectory;
+
         /// <summary>查询解决方案路径（官方工作区查询 API）并构建完整目录树。</summary>
         public async Task LoadSolutionAsync(VisualStudioExtensibility extensibility, CancellationToken cancellationToken)
         {
@@ -182,15 +255,31 @@ namespace MPSPlus
 
                 List<FileTreeItem> items = await Task.Run(
                     () => BuildChildren(directory, directory, cancellationToken), cancellationToken);
-
                 this.rootItems.AddRange(items);
+
+                // 指定目录过滤：预构建指定目录顶层，开关切换零等待（相对路径仍以解决方案目录为基准）
+                string scopeNote = string.Empty;
+                if (DesignatedDirectory.Length > 0)
+                {
+                    if (Directory.Exists(DesignatedDirectory))
+                    {
+                        List<FileTreeItem> scoped = await Task.Run(
+                            () => BuildChildren(DesignatedDirectory, directory, cancellationToken), cancellationToken);
+                        this.scopedRootItems.AddRange(scoped);
+                    }
+                    else
+                    {
+                        scopeNote = "（指定目录不存在，过滤未生效）";
+                    }
+                }
+
                 if (this.searchText.Length == 0)
                 {
                     this.Items.Clear();
-                    this.Items.AddRange(items);
+                    this.Items.AddRange(this.CurrentTopItems);
                 }
 
-                this.StatusText = "就绪";
+                this.StatusText = $"就绪{scopeNote}";
             }
             catch (OperationCanceledException)
             {
@@ -212,21 +301,21 @@ namespace MPSPlus
             if (filter.Length == 0)
             {
                 this.Items.Clear();
-                this.Items.AddRange(this.rootItems);
+                this.Items.AddRange(this.CurrentTopItems);
                 this.StatusText = "就绪";
                 return;
             }
 
             this.StatusText = "搜索中…";
-            string solutionDirectory = this.solutionDirectory;
+            string scanDirectory = this.CurrentScanDirectory;
             _ = Task.Run(() =>
             {
                 try
                 {
                     var matches = new List<FileTreeItem>();
-                    if (solutionDirectory.Length > 0)
+                    if (scanDirectory.Length > 0)
                     {
-                        SearchDirectory(solutionDirectory, filter, matches, cts.Token);
+                        SearchDirectory(scanDirectory, filter, matches, cts.Token);
                     }
 
                     cts.Token.ThrowIfCancellationRequested();
